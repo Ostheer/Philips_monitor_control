@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 from functools import reduce
 import serial
-import time
 import sys
 from enum import Enum
-
-MONITOR_ID = 1
-HEADER = 0xa6
-CONTROL = 0x01
+import os
 
 class m(Enum):
     normal = 0
@@ -36,8 +32,15 @@ class Monitor:
                                 dsrdtr=False,
                                 xonxoff=False)
         except serial.SerialException:
-            raise Exception("Could not connect")
-            
+            print("Could not connect! Have you set the right serial port in the environment variable?")
+            sys.exit(1)
+    
+    def __del__(self):
+        try:
+            self.ser.close()
+        except:
+            pass
+    
     def setPower(self, state):
         command = [0x18, 1+state]
         return self.sendCommand(command)
@@ -129,7 +132,7 @@ class Monitor:
 
     def setSubwin(self, style):
         # No subwindow
-        if not style:
+        if not style or style == "off" or style == "1":
             command = [0x3C, 0x00, 0x00, 0x00, 0x00]
         
         # PiP type
@@ -149,7 +152,7 @@ class Monitor:
             command = [0x3C, 0x03, 0x03, 0x00, 0x00]
         elif style == "4":
             command = [0x3C, 0x04, 0x03, 0x00, 0x00]
-            
+
         else:
             print("Unrecognised subwindow type.")
             return
@@ -158,20 +161,27 @@ class Monitor:
         
     def sendCommand(self, command):
         if command is not None:
-            buf = bytearray(command)
-            buf.insert(0, HEADER)
-            buf.insert(1, MONITOR_ID)
-            buf.insert(2, 0x00)  # category
-            buf.insert(3, 0x00)  # page
-            buf.insert(4, 0x00)  # function
-            buf.insert(5, len(buf)-3)  # length
-            buf.insert(6, CONTROL)
-            buf.append(reduce(lambda a, b: a ^ b, buf))  # checksum
-            self.ser.write(buf)
+            packet = bytearray(command)
+            packet.insert(0, self.HEADER)
+            packet.insert(1, self.MONITOR_ID)
+            packet.insert(2, self.CATEGORY)
+            packet.insert(3, self.PAGE)
+            packet.insert(4, self.FUNCTION)
+            packet.insert(5, len(packet)-3)
+            packet.insert(6, self.CONTROL)
+            packet.append(reduce(lambda a, b: a ^ b, packet)) # Checksum
+            self.ser.write(packet)
             rep = self.ser.read(30)
             result = rep[6:-1]
             return result
-        
+    
+    # Some constants relating to the protocol
+    MONITOR_ID = 1
+    HEADER = 0xa6
+    CONTROL = 0x01
+    CATEGORY = 0x00
+    PAGE = 0x00
+    FUNCTION = 0x00
     source_types = {
             "video": 0x01,
             "s-video": 0x02,
@@ -190,9 +200,12 @@ class Monitor:
             "dp": 0x04,
             "mini dp": 0x05}
 
+try:
+    monitor = Monitor(port = os.environ["PHILIPS_MONITOR"])
+except KeyError:
+    print("No serial port set. Try running 'PHILIPS_MONITOR=" + '"/dev/ttyX"' + " dispcon COMMAND', or export a variable.")
+    sys.exit(1)
 
-
-monitor = Monitor(port = '/dev/ttyUSB2')
 mode = m.normal
 arguments = sys.argv
 
@@ -214,6 +227,34 @@ for i, arg in enumerate(arguments):
             sources["main"] = monitor.getSource("main")["main"]
             for key, value in sources.items():
                 print(key + ": " + value)
+        elif arg == "help" or arg == "?" or arg == "h":
+            print("Philips Display Serial Interface Communication Protocol (SICP).")
+            print("This program looks in the environment variable 'PHILIPS_MONITOR' for the serial port.")
+            print("All commands below may be combined.")
+            print(" ")
+            print("Getters:")
+            print("'dispcon settings'                                 - Show current display settings")
+            print("'dispcon serial'                                   - Show monitor serial number")
+            print("'dispcon platform'                                 - Show SICP platform revision")
+            print("'dispcon sources'                                  - Show current video input sources")
+            print("'dispcon help'                                     - Show the current help menu")
+            print(" ")
+            print("General settings:")
+            print("'dispcon b X'                                      - set (b)rightness to X %")
+            print("'dispcon c X'                                      - set (c)ontrast to X %")
+            print("'dispcon s X'                                      - set (s)harpness to X %")
+            print("'dispcon source I'                                 - set the video input to I")
+            print("    Supported inputs are 'vga', 'hdmi', 'hdmi2', 'dvi', 'dp' and 'mdp'.")
+            print(" ")
+            print("Subwindow configuration:")
+            print("'dispcon sub type T'                               - set Subwindow type to T.")
+            print("    Supported types are 'pip', '1'='off', '2', '3' and '4'.")
+            print("    Type 2, 3 and 4 display inputs side-by-side.")
+            print("'discpcon sub off'                                 - disable subwindow")
+            print("'dispcon sub source O I'                           - set source of Subwindow O to I.")
+            print("    Supported Subwindows are '1'='pip', '2' and '3'.")
+            print("    Supported inputs are 'vga', 'hdmi', 'hdmi2', 'dvi', 'dp' and 'mdp'.")
+            print("'dispcon sub type T source O1 I1 source O2 I2 ...' - combination to quickly set types and sources")
             
         # Set command mode
         elif arg == "b":
@@ -242,6 +283,7 @@ for i, arg in enumerate(arguments):
             mode = m.subsrc
         elif arg == "off":
             monitor.setSubwin(False)
+            mode = m.normal
         else:
             #End of PIP commands, re-insert current argument
             mode = m.normal
@@ -325,6 +367,8 @@ for i, arg in enumerate(arguments):
             print("Invalid value")
             break
         mode = m.normal
-        
 
-        
+if mode is not m.normal:
+    print("Missing argument.")
+    
+del monitor
