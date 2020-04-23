@@ -1,0 +1,330 @@
+#!/usr/bin/env python3
+from functools import reduce
+import serial
+import time
+import sys
+from enum import Enum
+
+MONITOR_ID = 1
+HEADER = 0xa6
+CONTROL = 0x01
+
+class m(Enum):
+    normal = 0
+    brightness = 1
+    contrast = 2
+    sharpness = 3
+    source = 4
+    sub = 5
+    subsrc = 6
+    sub1src = 7
+    sub2src = 8
+    sub3src = 9
+    subtype = 10
+    power = 11
+
+class Monitor:
+    def __init__(self, port):
+        try:
+            self.ser = serial.Serial(port=port,
+                                baudrate=9600,
+                                parity=serial.PARITY_NONE,
+                                stopbits=serial.STOPBITS_ONE,
+                                bytesize=serial.EIGHTBITS,
+                                timeout=1,
+                                rtscts=False,
+                                dsrdtr=False,
+                                xonxoff=False)
+        except serial.SerialException:
+            raise Exception("Could not connect")
+            
+    def setPower(self, state):
+        command = [0x18, 1+state]
+        return self.sendCommand(command)
+        
+    def setBrightness(self, value):
+        settings = self.getSettings()
+        return self.sendCommand([0x32, value, 0x37, settings["contrast"], settings["sharpness"], 0x37])
+    def setContrast(self, value):
+        settings = self.getSettings()
+        return self.sendCommand([0x32, settings["brightness"], 0x37, value, settings["sharpness"], 0x37])
+    def setSharpness(self, value):
+        settings = self.getSettings()
+        return self.sendCommand([0x32, settings["brightness"], 0x37, settings["contrast"], value, 0x37])
+    
+    def getSettings(self):
+        settings = self.sendCommand([0x33])
+        return {"brightness": settings[1],"contrast":settings[3],"sharpness":settings[4]}
+    def getPlatform(self):
+        return self.sendCommand([0xA2])
+    def getSerial(self):
+        return str(self.sendCommand([0x15])[1:]).split("'")[1]
+    
+    def getSource(self, sink):
+        if sink == "pip" or "subwin" in sink:
+            sources = self.sendCommand([0x85])[2:]
+            returndict = {}
+            for i, source in enumerate(sources):
+                for key, value in self.source_ports.items():
+                    if value == source:
+                        returndict["subwin"+str(i+1)] = key
+            
+            if sink == "pip" or sink == "subwin1":
+                return returndict["subwin1"]
+            elif sink == "subwin2":
+                return returndict["subwin2"]
+            elif sink == "subwin3":
+                return returndict["subwin3"]
+            elif sink == "subwins":
+                return returndict
+            else:
+                print("Unrecognised sink.")
+                return
+        
+        elif sink == "main":
+            source = self.sendCommand([0xAD])[2]
+            for key, value in self.source_ports.items():
+                if value == source:
+                    return {"main":key}
+        
+    def setSource(self, source, sink):
+        if sink == "main":
+            if source == "vga":
+                sType = self.source_types["vga"]
+                sPort = self.source_ports["vga"]
+            elif source == "hdmi":
+                sType = self.source_types["hdmi"]
+                sPort = self.source_ports["hdmi"]
+            elif source == "hdmi2":
+                sType = self.source_types["hdmi"]
+                sPort = self.source_ports["hdmi2"]
+            elif source == "dp":
+                sType = self.source_types["displayport"]
+                sPort = self.source_ports["dp"]
+            elif source == "mdp":
+                sType = self.source_types["displayport"]
+                sPort = self.source_ports["mini dp"]
+            else:
+                print("Unrecognised source.")
+                return
+            command = [0xAC, sType, sPort, 0x01, 0x00]
+        
+        elif sink == "pip" or "subwin" in sink:
+            try:
+                currentsources = self.getSource("subwins")
+                if sink == "pip" or sink == "subwin1":
+                    command = [0x84, 0xFD, self.source_ports[source], self.source_ports[currentsources["subwin2"]], self.source_ports[currentsources["subwin3"]]]
+                elif sink == "subwin2":
+                    command = [0x84, 0xFD, self.source_ports[currentsources["subwin1"]], self.source_ports[source], self.source_ports[currentsources["subwin3"]]]
+                elif sink == "subwin3":
+                    command = [0x84, 0xFD, self.source_ports[currentsources["subwin1"]], self.source_ports[currentsources["subwin2"]], self.source_ports[source]]
+                else:
+                    print("Unrecognised sink.")
+                    return
+            except KeyError:
+                print("Unrecognised source.")
+                return
+            
+        return self.sendCommand(command)
+
+    def setSubwin(self, style):
+        # No subwindow
+        if not style:
+            command = [0x3C, 0x00, 0x00, 0x00, 0x00]
+        
+        # PiP type
+        elif style == "bottomleft":
+            command = [0x3C, 0x01, 0x00, 0x00, 0x00]
+        elif style == "topleft":
+            command = [0x3C, 0x01, 0x01, 0x00, 0x00]
+        elif style == "topright":
+            command = [0x3C, 0x01, 0x02, 0x00, 0x00]
+        elif style == "bottomright" or style == "pip":
+            command = [0x3C, 0x01, 0x03, 0x00, 0x00]
+           
+        # PbP type
+        elif style == "2":
+            command = [0x3C, 0x02, 0x03, 0x00, 0x00]
+        elif style == "3":
+            command = [0x3C, 0x03, 0x03, 0x00, 0x00]
+        elif style == "4":
+            command = [0x3C, 0x04, 0x03, 0x00, 0x00]
+            
+        else:
+            print("Unrecognised subwindow type.")
+            return
+        
+        return self.sendCommand(command)
+        
+    def sendCommand(self, command):
+        if command is not None:
+            buf = bytearray(command)
+            buf.insert(0, HEADER)
+            buf.insert(1, MONITOR_ID)
+            buf.insert(2, 0x00)  # category
+            buf.insert(3, 0x00)  # page
+            buf.insert(4, 0x00)  # function
+            buf.insert(5, len(buf)-3)  # length
+            buf.insert(6, CONTROL)
+            buf.append(reduce(lambda a, b: a ^ b, buf))  # checksum
+            self.ser.write(buf)
+            rep = self.ser.read(30)
+            result = rep[6:-1]
+            return result
+        
+    source_types = {
+            "video": 0x01,
+            "s-video": 0x02,
+            "dvd/hd": 0x03,
+            "rgbhv": 0x04,
+            "vga": 0x05,
+            "hdmi": 0x06,
+            "dvi": 0x07,
+            "ops": 0x08,
+            "displayport": 0x09}
+    source_ports = {
+            "vga": 0x00,
+            "dvi": 0x01,
+            "hdmi": 0x02,
+            "hdmi2": 0x03, #mhl
+            "dp": 0x04,
+            "mini dp": 0x05}
+
+
+
+monitor = Monitor(port = '/dev/ttyUSB2')
+mode = m.normal
+arguments = sys.argv
+
+
+for i, arg in enumerate(arguments):
+    # Get mode / no mode set
+    if mode == m.normal:
+        # Get info
+        if arg == "settings":
+            params = monitor.getSettings()
+            print("Brightness: " + str(params["brightness"]) + "%\nContrast:   " + str(params["contrast"]) + "%\nSharpness:  " + str(params["sharpness"]) + "%")
+        elif arg == "serial":
+            print("Serial number: " + monitor.getSerial())
+        elif arg == "platform":
+            params = monitor.getPlatform()
+            print(params)
+        elif arg == "sources":
+            sources = monitor.getSource("subwins")
+            sources["main"] = monitor.getSource("main")["main"]
+            for key, value in sources.items():
+                print(key + ": " + value)
+            
+        # Set command mode
+        elif arg == "b":
+            mode = m.brightness
+        elif arg == "c":
+            mode = m.contrast
+        elif arg == "s":
+            mode = m.sharpness
+        elif arg == "sub":
+            mode = m.sub
+        elif arg == "power":
+            mode = m.power
+        elif arg == "source":
+            mode = m.source
+        
+        else:
+            if arg is not arguments[0]:
+                print("Command not recognised.")
+                break
+    
+    # Set Subwindow command mode
+    elif mode == m.sub:
+        if arg == "type":
+            mode = m.subtype
+        elif arg == "source":
+            mode = m.subsrc
+        elif arg == "off":
+            monitor.setSubwin(False)
+        else:
+            #End of PIP commands, re-insert current argument
+            mode = m.normal
+            arguments.insert(i,arg)
+            continue
+    
+    # Set Subwindow type position
+    elif mode == m.subtype:
+        monitor.setSubwin(arg)
+        mode = m.sub
+    
+    # Set Subwindow source
+    elif mode == m.subsrc:
+        if arg == "1" or arg == "pip":
+            mode = m.sub1src
+        if arg == "2":
+            mode = m.sub2src
+        if arg == "3":
+            mode = m.sub3src
+    elif mode == m.sub1src:
+        monitor.setSource(source=arg, sink="subwin1")
+        mode = m.sub
+    elif mode == m.sub2src:
+        monitor.setSource(source=arg, sink="subwin2")
+        mode = m.sub
+    elif mode == m.sub3src:
+        monitor.setSource(source=arg, sink="subwin3")
+        mode = m.sub
+
+    # Set brightness
+    elif mode == m.brightness:
+        try:
+            val = int(arg)
+            if val > 100 or val < 0:
+                print("Invalid value")
+            else:
+                monitor.setBrightness(val)
+        except ValueError:
+            print("Invalid value")
+            break
+        mode = m.normal
+    
+    # Set contrast
+    elif mode == m.contrast:
+        try:
+            val = int(arg)
+            if val > 100 or val < 0:
+                print("Invalid value")
+            else:
+                monitor.setContrast(val)
+        except ValueError:
+            print("Invalid value")
+            break
+        mode = m.normal
+    
+    # Set sharpness
+    elif mode == m.sharpness:
+        try:
+            val = int(arg)
+            if val > 100 or val < 0:
+                print("Invalid value")
+            else:
+                monitor.setSharpness(val)
+        except ValueError:
+            print("Invalid value")
+            break
+        mode = m.normal
+    
+    # Set source
+    elif mode == m.source:
+        monitor.setSource(source=arg, sink="main")
+        mode = m.normal
+    
+    # Set power
+    elif mode == m.power:
+        if arg == "on":
+            monitor.setPower(True)
+        elif arg =="off":
+            monitor.setPower(False)
+        else:
+            print("Invalid value")
+            break
+        mode = m.normal
+        
+
+        
