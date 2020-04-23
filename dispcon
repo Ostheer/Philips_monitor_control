@@ -302,10 +302,13 @@ for i, arg in enumerate(arguments):
     elif mode == m.subsrc:
         if arg == "1" or arg == "pip":
             mode = m.sub1src
-        if arg == "2":
+        elif arg == "2":
             mode = m.sub2src
-        if arg == "3":
+        elif arg == "3":
             mode = m.sub3src
+        else:
+            monitor.setSource(arg, sink="main")
+            mode = m.normal
     elif mode == m.sub1src:
         monitor.setSource(source=arg, sink="subwin1")
         if i == len(arguments)-1:
