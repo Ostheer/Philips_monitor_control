@@ -293,7 +293,10 @@ for i, arg in enumerate(arguments):
     # Set Subwindow type position
     elif mode == m.subtype:
         monitor.setSubwin(arg)
-        mode = m.sub
+        if i == len(arguments)-1:
+            mode = m.normal
+        else:
+            mode = m.sub
     
     # Set Subwindow source
     elif mode == m.subsrc:
@@ -305,13 +308,22 @@ for i, arg in enumerate(arguments):
             mode = m.sub3src
     elif mode == m.sub1src:
         monitor.setSource(source=arg, sink="subwin1")
-        mode = m.sub
+        if i == len(arguments)-1:
+            mode = m.normal
+        else:
+            mode = m.sub
     elif mode == m.sub2src:
         monitor.setSource(source=arg, sink="subwin2")
-        mode = m.sub
+        if i == len(arguments)-1:
+            mode = m.normal
+        else:
+            mode = m.sub
     elif mode == m.sub3src:
         monitor.setSource(source=arg, sink="subwin3")
-        mode = m.sub
+        if i == len(arguments)-1:
+            mode = m.normal
+        else:
+            mode = m.sub
 
     # Set brightness
     elif mode == m.brightness:
