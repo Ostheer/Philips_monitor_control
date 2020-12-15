@@ -106,7 +106,7 @@ class Monitor:
                 sPort = self.source_ports["dp"]
             elif source == "mdp":
                 sType = self.source_types["displayport"]
-                sPort = self.source_ports["mini dp"]
+                sPort = self.source_ports["mdp"]
             else:
                 print("Unrecognised source.")
                 return
@@ -198,7 +198,7 @@ class Monitor:
             "hdmi": 0x02,
             "hdmi2": 0x03, #mhl
             "dp": 0x04,
-            "mini dp": 0x05}
+            "mdp": 0x05}
 
 try:
     monitor = Monitor(port = os.environ["PHILIPS_MONITOR"])
