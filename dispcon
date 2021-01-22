@@ -18,6 +18,7 @@ class m(Enum):
     sub3src = 9
     subtype = 10
     power = 11
+    brightnessRelative = 12
 
 class Monitor:
     def __init__(self, port):
@@ -241,6 +242,7 @@ for i, arg in enumerate(arguments):
             print(" ")
             print("General settings:")
             print("'dispcon b X'                                      - set (b)rightness to X %")
+            print("'dispcon b i X'                                    - set (i)ncrease (b)rightness with X %point")
             print("'dispcon c X'                                      - set (c)ontrast to X %")
             print("'dispcon s X'                                      - set (s)harpness to X %")
             print("'dispcon source I'                                 - set the video input to I")
@@ -336,6 +338,29 @@ for i, arg in enumerate(arguments):
                 print("Invalid value")
             else:
                 monitor.setBrightness(val)
+            mode = m.normal
+        except ValueError:
+            if arg == "i":
+                mode = m.brightnessRelative
+            else:
+                print("Invalid value")
+                mode = m.normal
+                break
+        
+    elif mode == m.brightnessRelative:
+        try:
+            val = int(arg)
+            if val > 100 or val < -100:
+                print("Invalid value")
+            else:
+                params = monitor.getSettings()
+                curbr = int(params["brightness"])
+                newbr = curbr + val
+                if newbr < 0:
+                    newbr = 0
+                elif newbr > 100:
+                    newbr = 100
+                monitor.setBrightness(newbr)
         except ValueError:
             print("Invalid value")
             break
