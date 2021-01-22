@@ -8,7 +8,10 @@ Python command line tool to control the Philips BDM4065UC monitor (and possibly 
 
 # Commands
 All commands below may be combined.
- 
+
+## Configuration settings
+* `dispcon --port PORT`                              - Override any port present in your environment
+
 ## Getters:
 * `dispcon settings`                                 - Show current display settings
 * `dispcon serial`                                   - Show monitor serial number
@@ -18,6 +21,7 @@ All commands below may be combined.
  
 ## General settings:
 * `dispcon b X`                                      - set (b)rightness to X %
+* `dispcon b i X`                                    - set (i)ncrease (b)rightness with X %point
 * `dispcon c X`                                      - set (c)ontrast to X %
 * `dispcon s X`                                      - set (s)harpness to X %
 * `dispcon source I`                                 - set the video input to I
