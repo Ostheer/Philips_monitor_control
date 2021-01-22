@@ -19,6 +19,7 @@ class m(Enum):
     subtype = 10
     power = 11
     brightnessRelative = 12
+    ignore = 13
 
 class Monitor:
     def __init__(self, port):
@@ -201,15 +202,31 @@ class Monitor:
             "dp": 0x04,
             "mdp": 0x05}
 
-try:
-    monitor = Monitor(port = os.environ["PHILIPS_MONITOR"])
-except KeyError:
-    print("No serial port set. Try running 'PHILIPS_MONITOR=" + '"/dev/ttyX"' + " dispcon COMMAND', or export a variable.")
-    sys.exit(1)
-
 mode = m.normal
 arguments = sys.argv
+portSet = False
 
+try:
+    port = os.environ["PHILIPS_MONITOR"]
+    portSet = True
+except KeyError:
+    pass
+
+portarg = False
+for i, arg in enumerate(arguments):
+    if not portarg:
+        if arg == "--port":
+            portarg = True
+    else:
+        port = arg
+        portSet = True
+
+if portSet:
+    monitor = Monitor(port = port)
+else:
+    print("No serial port set. Try running 'PHILIPS_MONITOR=" + '"/dev/ttyX"' + " dispcon COMMAND', or export a variable.")
+    print("Alternatively, pass a port using --port PORT")
+    sys.exit(1)
 
 for i, arg in enumerate(arguments):
     # Get mode / no mode set
@@ -231,6 +248,7 @@ for i, arg in enumerate(arguments):
         elif arg == "help" or arg == "?" or arg == "h":
             print("Philips Display Serial Interface Communication Protocol (SICP).")
             print("This program looks in the environment variable 'PHILIPS_MONITOR' for the serial port.")
+            print("This can be overridden using the --port command line option.")
             print("All commands below may be combined.")
             print(" ")
             print("Getters:")
@@ -271,6 +289,8 @@ for i, arg in enumerate(arguments):
             mode = m.power
         elif arg == "source":
             mode = m.source
+        elif arg == "--port":
+            mode = m.ignore
         
         else:
             if arg is not arguments[0]:
@@ -406,6 +426,9 @@ for i, arg in enumerate(arguments):
         else:
             print("Invalid value")
             break
+        mode = m.normal
+    
+    elif mode == m.ignore:
         mode = m.normal
 
 if mode is not m.normal:
